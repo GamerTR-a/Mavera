@@ -61,6 +61,16 @@ class PermissionsService {
 
   Future<PermState> bluetooth() async {
     if (Platform.isAndroid) {
+      try {
+        final info = await DeviceInfoPlugin().androidInfo;
+        if (info.version.sdkInt < 31) {
+          // Android 11 ve altında (API < 31) Bluetooth (BLUETOOTH / BLUETOOTH_ADMIN)
+          // normal izindir, kurulum anında otomatik verilir; çalışma zamanı iletişim kutusu yoktur.
+          return PermState.granted;
+        }
+      } on Object catch (e) {
+        AppLogger.w('Cihaz bilgisi okunamadı: $e');
+      }
       final scan = await Permission.bluetoothScan.status;
       final conn = await Permission.bluetoothConnect.status;
       return scan.isGranted && conn.isGranted ? PermState.granted : PermState.denied;
@@ -93,11 +103,29 @@ class PermissionsService {
   Future<void> requestBluetooth() async {
     try {
       if (Platform.isAndroid) {
-        final r = await [Permission.bluetoothScan, Permission.bluetoothConnect].request();
-        if (r.values.any((s) => s.isPermanentlyDenied)) await openAppSettings();
+        try {
+          final info = await DeviceInfoPlugin().androidInfo;
+          if (info.version.sdkInt < 31) {
+            // Android 11 ve altı için çalışma zamanı izni gerekmez, zaten verilmiştir.
+            return;
+          }
+        } on Object catch (_) {}
+
+        final statuses = await [
+          Permission.bluetoothScan,
+          Permission.bluetoothConnect,
+        ].request();
+
+        final scan = statuses[Permission.bluetoothScan] ?? await Permission.bluetoothScan.status;
+        final conn = statuses[Permission.bluetoothConnect] ?? await Permission.bluetoothConnect.status;
+
+        if (!scan.isGranted || !conn.isGranted) {
+          // Sistem diyalog göstermeden reddettiyse veya kalıcı reddedildiyse ayarlara yönlendir
+          await openAppSettings();
+        }
       } else {
         final s = await Permission.bluetooth.request();
-        if (s.isPermanentlyDenied) await openAppSettings();
+        if (s.isPermanentlyDenied || !s.isGranted) await openAppSettings();
       }
     } on Object catch (e) {
       AppLogger.w('Bluetooth izni istenemedi: $e');

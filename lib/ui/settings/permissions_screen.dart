@@ -123,8 +123,11 @@ class _PermissionsListState extends ConsumerState<PermissionsList> with WidgetsB
           title: t.permBluetooth,
           reason: t.permBluetoothWhy,
           state: s.bluetooth,
-          actionLabel: t.commonAllow,
-          onAction: () => unawaited(_run(p.requestBluetooth)),
+          note: Platform.isAndroid && s.bluetooth == PermState.denied
+              ? 'Ayarlarda "Yakındaki cihazlar" (Nearby devices) olarak geçer.'
+              : null,
+          actionLabel: s.bluetooth == PermState.denied ? t.commonAllow : null,
+          onAction: s.bluetooth == PermState.granted ? null : () => unawaited(_run(p.requestBluetooth)),
         ),
         gap(),
         PermissionCard(
