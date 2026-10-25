@@ -26,11 +26,12 @@ class _PairingStepState extends ConsumerState<PairingStep> {
   final List<int> _moves = <int>[];
   final List<int> _raw = <int>[];
   bool _waveDone = false;
+  bool _waveSkipped = false;
   bool _tapDone = false;
   bool _tapSkipped = false;
   bool _rawOn = false;
 
-  static const _waveTarget = 150;
+  static const _waveTarget = 80;
   static const _rawTarget = 1500;
 
   @override
@@ -47,7 +48,7 @@ class _PairingStepState extends ConsumerState<PairingStep> {
       switch (m) {
         case Heartbeat(:final moves):
           _moves.add(moves);
-          if (_moves.length > 3) _moves.removeAt(0);
+          if (_moves.length > 6) _moves.removeAt(0);
         case RawMessage(:final milliG):
           _raw.add(milliG);
           if (_raw.length > 15) _raw.removeAt(0);
@@ -75,7 +76,7 @@ class _PairingStepState extends ConsumerState<PairingStep> {
 
   void _report() {
     final connected = ref.read(coreViewProvider).connection == RingConnectionState.connected;
-    widget.onCanContinue(connected && _waveDone);
+    widget.onCanContinue(connected && (_waveDone || _waveSkipped));
   }
 
   @override
@@ -92,8 +93,7 @@ class _PairingStepState extends ConsumerState<PairingStep> {
     final theme = Theme.of(context);
     final v = ref.watch(coreViewProvider);
     final connected = v.connection == RingConnectionState.connected;
-    final fwOk = ref.watch(settingsProvider.select((s) => s.firmwareSupportsCommands));
-    if (connected && fwOk && !_rawOn) {
+    if (connected && !_rawOn) {
       _rawOn = true;
       unawaited(ref.read(appCoreProvider).setRaw(on: true));
     }
@@ -139,6 +139,7 @@ class _PairingStepState extends ConsumerState<PairingStep> {
         );
     }
 
+    final waveActive = _waveDone || _waveSkipped;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -150,16 +151,28 @@ class _PairingStepState extends ConsumerState<PairingStep> {
           Row(
             children: [
               Expanded(child: Text(t.obPairWave, style: theme.textTheme.titleMedium)),
-              if (_waveDone) Icon(Icons.check_circle, color: c.safe),
+              if (_waveDone)
+                Icon(Icons.check_circle, color: c.safe)
+              else if (!_waveSkipped)
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _waveSkipped = true;
+                      HapticFeedback.lightImpact();
+                    });
+                    _report();
+                  },
+                  child: Text(t.commonSkip),
+                ),
             ],
           ),
           Text(t.obPairWaveSub, style: theme.textTheme.bodySmall),
           const SizedBox(height: 8),
           Semantics(
-            label: '${t.obPairWave} %${(_progress * 100).round()}',
+            label: '${t.obPairWave} %${(waveActive ? 100 : (_progress * 100).round())}',
             excludeSemantics: true,
             child: LinearProgressIndicator(
-              value: _waveDone ? 1 : _progress,
+              value: waveActive ? 1 : _progress,
               minHeight: 14,
               borderRadius: BorderRadius.circular(7),
               color: c.safe,
